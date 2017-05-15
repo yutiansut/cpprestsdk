@@ -31,7 +31,6 @@ set(SOURCES
   pplx/pplx.cpp
   uri/uri.cpp
   uri/uri_builder.cpp
-  uri/uri_parser.cpp
   utilities/asyncrt_utils.cpp
   utilities/base64.cpp
   utilities/web_utilities.cpp
