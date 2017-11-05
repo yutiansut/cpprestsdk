@@ -1,9 +1,3 @@
-include_directories(
-  ../utilities/include
-  ../utilities/testlistener/include
-  ${Casablanca_INCLUDE_DIRS}
-)
-
 set(SOURCES
   authentication_tests.cpp
   building_request_tests.cpp
@@ -30,8 +24,9 @@ set(SOURCES
   stdafx.cpp
 )
 
+add_casablanca_test(httpclient_test SOURCES)
+target_link_libraries(httpclient_test PRIVATE httptest_utilities)
 if(NOT WIN32)
   cpprest_find_boost()
-  link_libraries(cpprestsdk_boost_internal)
+  target_link_libraries(httpclient_test PRIVATE cpprestsdk_boost_internal)
 endif()
-add_casablanca_test(httpclient_test SOURCES)

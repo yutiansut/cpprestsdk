@@ -31,6 +31,7 @@ namespace pplx = Concurrency;
 #include "cpprest/producerconsumerstream.h"
 #include "cpprest/rawptrstream.h"
 #include "cpprest/containerstream.h"
+#include "cpprest/astreambuf.h"
 #include "cpprest/interopstream.h"
 #include "cpprest/streams.h"
 #include "cpprest/filestream.h"
