@@ -57,7 +57,16 @@ public:
 
     virtual ~threadpool() = default;
 
-    static void set_num_threads(size_t num_threads);
+    /// <summary>
+    /// Initializes the cpprestsdk threadpool with a custom number of threads
+    /// </summary>
+    /// <remarks>
+    /// This function allows an application (in their main function) to initialize the cpprestsdk
+    /// threadpool with a custom threadcount. Libraries should avoid calling this function to avoid
+    /// a diamond problem with multiple consumers attempting to customize the pool.
+    /// </remarks>
+    /// <exception cref="std::exception">Thrown if the threadpool has already been initialized</exception>
+    static void initialize_with_threads(size_t num_threads);
 
     template<typename T>
     CASABLANCA_DEPRECATED("Use `.service().post(task)` directly.")
@@ -72,10 +81,6 @@ protected:
     threadpool(size_t num_threads) : m_service(static_cast<int>(num_threads)) {}
 
     boost::asio::io_service m_service;
-
-private:
-    static bool m_threads_started;
-    static size_t  m_num_threads;
 };
 
 }

@@ -17,9 +17,6 @@
 #include <jni.h>
 #endif
 
-size_t crossplat::threadpool::m_num_threads = 40;
-bool crossplat::threadpool::m_threads_started = false;
-
 namespace
 {
 
@@ -73,6 +70,45 @@ private:
     std::vector<std::unique_ptr<boost::asio::detail::thread>> m_threads;
     boost::asio::io_service::work m_work;
 };
+
+#if defined(_WIN32)
+// if linked into a DLL, the threadpool shared instance will be destroyed at DLL_PROCESS_DETACH,
+// at which stage joining threads causes deadlock, hence this dance
+static bool terminate_threads = false;
+static struct restore_terminate_threads
+{
+    ~restore_terminate_threads()
+    {
+        boost::asio::detail::thread::set_terminate_threads(terminate_threads);
+    }
+} destroyed_after;
+#endif
+static std::unique_ptr<threadpool_impl> s_shared_impl_memory;
+static std::atomic<threadpool_impl*> s_shared_impl(nullptr);
+#if defined(_WIN32)
+static struct enforce_terminate_threads
+{
+    ~enforce_terminate_threads()
+    {
+        terminate_threads = boost::asio::detail::thread::terminate_threads();
+        boost::asio::detail::thread::set_terminate_threads(true);
+    }
+} destroyed_before;
+#endif
+static std::mutex s_shared_impl_mutex;
+
+static crossplat::threadpool& get_shared_impl()
+{
+    auto p = s_shared_impl.load();
+    if (p) return *p;
+    std::lock_guard<std::mutex> lk(s_shared_impl_mutex);
+    p = s_shared_impl.load();
+    if (p) return *p;
+    s_shared_impl_memory = utility::details::make_unique<threadpool_impl>(40);
+    s_shared_impl = s_shared_impl_memory.get();
+    return *s_shared_impl_memory;
+}
+
 }
 
 namespace crossplat
@@ -106,39 +142,7 @@ JNIEnv* get_jvm_env()
 threadpool& threadpool::shared_instance()
 {
     abort_if_no_jvm();
-    static threadpool_impl s_shared(threadpool::m_num_threads);
-    threadpool::m_threads_started = true;
-    return s_shared;
-}
-
-#elif defined(_WIN32)
-
-// if linked into a DLL, the threadpool shared instance will be destroyed at DLL_PROCESS_DETACH,
-// at which stage joining threads causes deadlock, hence this dance
-threadpool& threadpool::shared_instance()
-{
-    static bool terminate_threads = false;
-    static struct restore_terminate_threads
-    {
-        ~restore_terminate_threads()
-        {
-            boost::asio::detail::thread::set_terminate_threads(terminate_threads);
-        }
-    } destroyed_after;
-
-    static threadpool_impl s_shared(threadpool::m_num_threads);
-    threadpool::m_threads_started = true;
-
-    static struct enforce_terminate_threads
-    {
-        ~enforce_terminate_threads()
-        {
-            terminate_threads = boost::asio::detail::thread::terminate_threads();
-            boost::asio::detail::thread::set_terminate_threads(true);
-        }
-    } destroyed_before;
-
-    return s_shared;
+    return get_shared_impl();
 }
 
 #else
@@ -146,21 +150,17 @@ threadpool& threadpool::shared_instance()
 // initialize the static shared threadpool
 threadpool& threadpool::shared_instance()
 {
-    static threadpool_impl s_shared(threadpool::m_num_threads);
-    threadpool::m_threads_started = true;
-    return s_shared;
+    return get_shared_impl();
 }
 
 #endif
 
-void threadpool::set_num_threads(size_t num_threads)
+void threadpool::initialize_with_threads(size_t num_threads)
 {
-    if (threadpool::m_threads_started)
-    {
-        throw std::runtime_error("Threads have already been started");
-    }
-
-    threadpool::m_num_threads = num_threads;
+    std::lock_guard<std::mutex> lk(s_shared_impl_mutex);
+    if (s_shared_impl.load()) throw std::runtime_error("the cpprestsdk threadpool has already been initialized");
+    s_shared_impl_memory = utility::details::make_unique<threadpool_impl>(num_threads);
+    s_shared_impl = s_shared_impl_memory.get();
 }
 
 }
